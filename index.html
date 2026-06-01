@@ -217,7 +217,7 @@
     <div class="auth-badge" id="authBadge">
       <div class="auth-dot offline" id="authDot"></div>
       <span class="auth-label" id="authLabel">Public view</span>
-      <button class="auth-btn-small" id="authBtn" onclick="handleAuthBtn()">Login</button>
+      <button class="auth-btn-small" id="authBtn" onclick="if(typeof handleAuthBtn==='function')handleAuthBtn()">Login</button>
     </div>
 
     <div style="padding: 7px 5px 0;">
@@ -293,7 +293,7 @@ let realtimeSub = null;
 // ---
 // INIT
 // ---
-(async function init() {
+window.addEventListener('load', async function init() {
   // Init Supabase client
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
