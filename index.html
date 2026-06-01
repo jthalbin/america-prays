@@ -424,8 +424,8 @@ async function loadData() {
       await seedResources();
     }
 
-    if (schedRows && schedRows.length === DAYS * SLOTS) {
-      schedule = Array.from({length: DAYS}, (_, d) => new Array(SLOTS).fill(0));
+    if (schedRows && schedRows.length > 0) {
+      schedule = Array.from({length: DAYS}, () => new Array(SLOTS).fill(0));
       schedRows.forEach(r => { schedule[r.day][r.slot] = r.resource_idx; });
     } else {
       // First run  generate and seed
