@@ -261,7 +261,7 @@
 // ---
 // CONFIGURATION - paste your Supabase credentials here
 // ---
-const SUPABASE_URL  = 'https://gyghwlrlnjizqfmqessr.supabase.co';
+const SUPABASE_URL  = 'https://gyghwlrlnjizqfmqessr.supabase.co/rest/v1/';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5Z2h3bHJsbmppenFmbXFlc3NyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMTI4NDIsImV4cCI6MjA5NTg4ODg0Mn0.bWlcuwFjf-egteUqj2l4mBjwhLfvLb_H6fIw1C-Vlvo';
 
 // ---
@@ -411,10 +411,21 @@ async function loadData() {
     if (resErr) throw resErr;
 
     // Load schedule
-    const { data: schedRows, error: schedErr } = await sb
-      .from('schedule')
-      .select('day, slot, resource_idx');
-    if (schedErr) throw schedErr;
+    // Fetch all schedule rows in batches (Supabase returns max 1000 per query)
+    let allSchedRows = [];
+    let from = 0;
+    const batchSize = 500;
+    while (true) {
+      const { data: batch, error: batchErr } = await sb
+        .from('schedule')
+        .select('day, slot, resource_idx')
+        .range(from, from + batchSize - 1);
+      if (batchErr) throw batchErr;
+      if (!batch || batch.length === 0) break;
+      allSchedRows = allSchedRows.concat(batch);
+      if (batch.length < batchSize) break;
+      from += batchSize;
+    }
 
     if (resRows && resRows.length > 0) {
       resources = resRows.map(r => r.name);
@@ -424,9 +435,9 @@ async function loadData() {
       await seedResources();
     }
 
-    if (schedRows && schedRows.length > 0) {
+    if (allSchedRows.length > 0) {
       schedule = Array.from({length: DAYS}, () => new Array(SLOTS).fill(0));
-      schedRows.forEach(r => { schedule[r.day][r.slot] = r.resource_idx; });
+      allSchedRows.forEach(r => { schedule[r.day][r.slot] = r.resource_idx; });
     } else {
       // First run  generate and seed
       generateSchedule();
