@@ -382,12 +382,28 @@ function renderTopbarActions() {
       <button class="btn" onclick="document.getElementById('csvScheduleInput').click()">Load Schedule</button>
       <button class="btn accent" onclick="exportScheduleCSV()">Export Schedule</button>
       <button class="btn prime-btn" onclick="exportResourcesCSV()">Export Resources</button>
-      <button class="btn" onclick="document.getElementById('csvResourcesInput').click()">Import Resources</button>`;
+      <button class="btn" onclick="document.getElementById('csvResourcesInput').click()">Import Resources</button>
+      <button class="btn danger" onclick="confirmPhase2Regen()">Regen Jun 21-Jul 4</button>`;
   } else {
     el.innerHTML = `
       <button class="btn accent" onclick="exportScheduleCSV()">Export Schedule</button>
       <div class="readonly-notice">View only - <span style="color:var(--accent);cursor:pointer;margin-left:4px;" onclick="showLogin()">Login to edit</span></div>`;
   }
+}
+
+function confirmPhase2Regen() {
+  document.getElementById('modalBody').innerHTML = `
+    <h3>Regenerate Jun 21 - Jul 4?</h3>
+    <p style="color:var(--text2);font-size:12.5px;margin-bottom:16px;">
+      This will rebuild only the Phase 2 schedule (Jun 21 - Jul 4) with corrected slot distribution,
+      no consecutive same-time repeats, and prime slots capped at 6-7 per resource.
+      June 4-20 will not be touched.
+    </p>
+    <div style="display:flex;gap:7px;">
+      <button class="btn danger" style="flex:1" onclick="closeModalDirect();regeneratePhase2()">Regenerate Phase 2</button>
+      <button class="btn" style="flex:1" onclick="closeModalDirect()">Cancel</button>
+    </div>`;
+  document.getElementById('modalOverlay').style.display = 'flex';
 }
 
 // ---
@@ -540,70 +556,110 @@ function shuffle(arr) {
 
 function tryGenerate() {
   const n = resources.length;
-  const p2Days = DAYS - PHASE2_START_DAY;
-  const p1TotalSlots = DAYS * SLOTS;
-  const p2TotalSlots = p2Days * SLOTS;
-  const p1PrimeSlots = DAYS * PRIME_PER_DAY;
-  const p2PrimeSlots = p2Days * PRIME_PER_DAY;
-  const nP1 = Math.min(39, n), nP2 = Math.max(0, n - 39);
+  const p2Days = DAYS - PHASE2_START_DAY;       // 14 days for TBC resources
+  const MAX_PRIME = 7;                           // no resource gets more than 7 prime slots
+
+  // All 44 resources share ALL slots equally across their available window
+  // P1 resources (0-38): all 31 days
+  // P2 resources (39-43): only last 14 days
+  // Target: make TBC slot count proportional so they match ~same density as P1
+  const p1Density = DAYS * SLOTS / 39;          // slots per P1 resource
+  const p2Target  = Math.round(p1Density * p2Days / DAYS); // scaled to 14-day window
 
   const targetTotal = new Array(n).fill(0);
   const targetPrime = new Array(n).fill(0);
 
+  // Distribute all 31-day slots among 39 P1 resources
+  const p1Total = DAYS * SLOTS - p2Days * SLOTS * (n - 39) / 39 | 0;
+  const nP1 = Math.min(39, n), nP2 = Math.max(0, n - 39);
+
   if (nP1 > 0) {
-    const base=Math.floor(p1TotalSlots/nP1), extra=p1TotalSlots%nP1;
-    const baseP=Math.floor(p1PrimeSlots/nP1), extraP=p1PrimeSlots%nP1;
-    for (let i=0; i<nP1; i++) { targetTotal[i]=base+(i<extra?1:0); targetPrime[i]=Math.max(MIN_PRIME,baseP+(i<extraP?1:0)); }
+    // P1 gets all slots not reserved for P2
+    const p2SlotPool = nP2 * p2Target;
+    const p1SlotPool = DAYS * SLOTS - p2SlotPool;
+    const base = Math.floor(p1SlotPool / nP1), extra = p1SlotPool % nP1;
+    const pBase = Math.floor((DAYS * PRIME_PER_DAY) / n), pExtra = (DAYS * PRIME_PER_DAY) % n;
+    for (let i = 0; i < nP1; i++) {
+      targetTotal[i] = base + (i < extra ? 1 : 0);
+      targetPrime[i] = Math.min(MAX_PRIME, Math.max(MIN_PRIME, pBase + (i < pExtra ? 1 : 0)));
+    }
   }
   if (nP2 > 0) {
-    const base=Math.floor(p2TotalSlots/nP2), extra=p2TotalSlots%nP2;
-    const baseP=Math.floor(p2PrimeSlots/nP2), extraP=p2PrimeSlots%nP2;
-    for (let i=0; i<nP2; i++) { const ri=39+i; targetTotal[ri]=base+(i<extra?1:0); targetPrime[ri]=Math.max(MIN_PRIME,baseP+(i<extraP?1:0)); }
+    const p2PrimePool = p2Days * PRIME_PER_DAY;
+    const pBase = Math.floor(p2PrimePool / nP2), pExtra = p2PrimePool % nP2;
+    for (let i = 0; i < nP2; i++) {
+      const ri = 39 + i;
+      targetTotal[ri] = p2Target + (i < ((DAYS * SLOTS - (nP1 > 0 ? targetTotal[0] * nP1 : 0))) % nP2 ? 1 : 0);
+      targetPrime[ri] = Math.min(MAX_PRIME, Math.max(MIN_PRIME, pBase + (i < pExtra ? 1 : 0)));
+    }
   }
 
-  schedule = Array.from({length:DAYS}, () => new Array(SLOTS).fill(-1));
-  const gotTotal=new Array(n).fill(0), gotPrime=new Array(n).fill(0);
+  schedule = Array.from({length: DAYS}, () => new Array(SLOTS).fill(-1));
+  const gotTotal = new Array(n).fill(0), gotPrime = new Array(n).fill(0);
 
   const isAvail = (ri, d) => ri < 39 || d >= PHASE2_START_DAY;
-  const canAssign = (ri, d, L) => {
+
+  // Check 8-hour gap AND no same slot on consecutive days
+  const canAssign = (ri, d, s) => {
     if (!isAvail(ri, d)) return false;
-    const lo=Math.max(0,L-SLOT_GAP+1), hi=Math.min(DAYS*SLOTS-1,L+SLOT_GAP-1);
-    for (let L2=lo; L2<=hi; L2++) {
-      if (L2===L) continue;
-      const d2=Math.floor(L2/SLOTS), s2=L2%SLOTS;
-      if (schedule[d2]&&schedule[d2][s2]===ri) return false;
+    const L = d * SLOTS + s;
+    // 8-hour gap check
+    const lo = Math.max(0, L - SLOT_GAP + 1), hi = Math.min(DAYS * SLOTS - 1, L + SLOT_GAP - 1);
+    for (let L2 = lo; L2 <= hi; L2++) {
+      if (L2 === L) continue;
+      const d2 = Math.floor(L2 / SLOTS), s2 = L2 % SLOTS;
+      if (schedule[d2] && schedule[d2][s2] === ri) return false;
+    }
+    // No same clock-slot on adjacent days (day before or after)
+    for (let dd = -2; dd <= 2; dd++) {
+      if (dd === 0) continue;
+      const d2 = d + dd;
+      if (d2 >= 0 && d2 < DAYS && schedule[d2] && schedule[d2][s] === ri) return false;
     }
     return true;
   };
+
   const pickBest = (cands, byPrime) => {
     shuffle(cands);
-    cands.sort((a,b) => {
-      if (byPrime) { const pa=targetPrime[a]-gotPrime[a], pb=targetPrime[b]-gotPrime[b]; if (pa!==pb) return pb-pa; }
-      return (targetTotal[b]-gotTotal[b])-(targetTotal[a]-gotTotal[a]);
+    cands.sort((a, b) => {
+      if (byPrime) {
+        const pa = targetPrime[a] - gotPrime[a], pb = targetPrime[b] - gotPrime[b];
+        if (pa !== pb) return pb - pa;
+      }
+      return (targetTotal[b] - gotTotal[b]) - (targetTotal[a] - gotTotal[a]);
     });
     return cands[0];
   };
 
-  for (let d=0; d<DAYS; d++) {
-    for (let s=PRIME_START; s<=PRIME_END; s++) {
-      const L=d*SLOTS+s;
-      let c=[];
-      for (let i=0;i<n;i++) if (gotPrime[i]<targetPrime[i]&&gotTotal[i]<targetTotal[i]&&canAssign(i,d,L)) c.push(i);
-      if (!c.length) for (let i=0;i<n;i++) if (gotTotal[i]<targetTotal[i]&&canAssign(i,d,L)) c.push(i);
-      if (!c.length) for (let i=0;i<n;i++) if (canAssign(i,d,L)) c.push(i);
+  // Phase A: prime slots
+  for (let d = 0; d < DAYS; d++) {
+    // Randomize slot order within prime window for variety
+    const primeSlots = Array.from({length: PRIME_PER_DAY}, (_, i) => PRIME_START + i);
+    shuffle(primeSlots);
+    for (const s of primeSlots) {
+      let c = [];
+      for (let i = 0; i < n; i++)
+        if (gotPrime[i] < targetPrime[i] && gotTotal[i] < targetTotal[i] && canAssign(i, d, s)) c.push(i);
+      if (!c.length) for (let i = 0; i < n; i++)
+        if (gotTotal[i] < targetTotal[i] && canAssign(i, d, s)) c.push(i);
+      if (!c.length) for (let i = 0; i < n; i++) if (canAssign(i, d, s)) c.push(i);
       if (!c.length) return false;
-      const ch=pickBest(c,true); schedule[d][s]=ch; gotTotal[ch]++; gotPrime[ch]++;
+      const ch = pickBest(c, true); schedule[d][s] = ch; gotTotal[ch]++; gotPrime[ch]++;
     }
   }
-  for (let d=0; d<DAYS; d++) {
-    for (let s=0; s<SLOTS; s++) {
-      if (s>=PRIME_START&&s<=PRIME_END) continue;
-      const L=d*SLOTS+s;
-      let c=[];
-      for (let i=0;i<n;i++) if (gotTotal[i]<targetTotal[i]&&canAssign(i,d,L)) c.push(i);
-      if (!c.length) for (let i=0;i<n;i++) if (canAssign(i,d,L)) c.push(i);
+
+  // Phase B: non-prime slots — randomize order for variety
+  for (let d = 0; d < DAYS; d++) {
+    const nonPrime = Array.from({length: SLOTS}, (_, i) => i)
+      .filter(s => s < PRIME_START || s > PRIME_END);
+    shuffle(nonPrime);
+    for (const s of nonPrime) {
+      let c = [];
+      for (let i = 0; i < n; i++)
+        if (gotTotal[i] < targetTotal[i] && canAssign(i, d, s)) c.push(i);
+      if (!c.length) for (let i = 0; i < n; i++) if (canAssign(i, d, s)) c.push(i);
       if (!c.length) return false;
-      const ch=pickBest(c,false); schedule[d][s]=ch; gotTotal[ch]++;
+      const ch = pickBest(c, false); schedule[d][s] = ch; gotTotal[ch]++;
     }
   }
   return true;
@@ -611,9 +667,142 @@ function tryGenerate() {
 
 function generateSchedule() {
   if (!resources.length) return false;
-  for (let a=0; a<500; a++) if (tryGenerate()) return true;
+  for (let a = 0; a < 500; a++) if (tryGenerate()) return true;
   toast('(!) Could not build a fully constraint-compliant schedule.');
   return false;
+}
+
+// Regenerate ONLY Phase 2 (Jun 21 - Jul 4) without touching Phase 1
+async function regeneratePhase2() {
+  const n = resources.length;
+  const MAX_PRIME = 7;
+  const p2Days = DAYS - PHASE2_START_DAY;
+  const p2PrimePool = p2Days * PRIME_PER_DAY;
+  const nP2 = Math.max(0, n - 39);
+
+  // Count what Phase 1 already gave each resource
+  const gotTotal = new Array(n).fill(0), gotPrime = new Array(n).fill(0);
+  for (let d = 0; d < PHASE2_START_DAY; d++)
+    schedule[d].forEach((ri, s) => { gotTotal[ri]++; if (slotType(s) === 'prime') gotPrime[ri]++; });
+
+  // Targets for full 31 days - use what phase 1 already gave + what phase 2 should add
+  const totalSlots = DAYS * SLOTS;
+  const baseTotal = Math.floor(totalSlots / n);
+  const extraTotal = totalSlots % n;
+  const targetTotal = Array.from({length: n}, (_, i) => baseTotal + (i < extraTotal ? 1 : 0));
+  const targetPrime = Array.from({length: n}, (_, i) => {
+    const bp = Math.floor((DAYS * PRIME_PER_DAY) / n);
+    const ep = (DAYS * PRIME_PER_DAY) % n;
+    return Math.min(MAX_PRIME, Math.max(MIN_PRIME, bp + (i < ep ? 1 : 0)));
+  });
+  // TBC resources: override with phase2-only targets
+  if (nP2 > 0) {
+    const pBase = Math.floor(p2PrimePool / nP2), pExtra = p2PrimePool % nP2;
+    for (let i = 0; i < nP2; i++) {
+      const ri = 39 + i;
+      targetPrime[ri] = Math.min(MAX_PRIME, Math.max(MIN_PRIME, pBase + (i < pExtra ? 1 : 0)));
+    }
+  }
+
+  const isAvail = (ri, d) => ri < 39 || d >= PHASE2_START_DAY;
+  const canAssign = (ri, d, s) => {
+    if (!isAvail(ri, d)) return false;
+    const L = d * SLOTS + s;
+    const lo = Math.max(0, L - SLOT_GAP + 1), hi = Math.min(DAYS * SLOTS - 1, L + SLOT_GAP - 1);
+    for (let L2 = lo; L2 <= hi; L2++) {
+      if (L2 === L) continue;
+      const d2 = Math.floor(L2 / SLOTS), s2 = L2 % SLOTS;
+      if (schedule[d2] && schedule[d2][s2] === ri) return false;
+    }
+    // No same clock-slot on adjacent days
+    for (let dd = -2; dd <= 2; dd++) {
+      if (dd === 0) continue;
+      const d2 = d + dd;
+      if (d2 >= 0 && d2 < DAYS && schedule[d2] && schedule[d2][s] === ri) return false;
+    }
+    return true;
+  };
+
+  const pickBest = (cands, byPrime) => {
+    shuffle(cands);
+    cands.sort((a, b) => {
+      if (byPrime) {
+        const pa = targetPrime[a] - gotPrime[a], pb = targetPrime[b] - gotPrime[b];
+        if (pa !== pb) return pb - pa;
+      }
+      return (targetTotal[b] - gotTotal[b]) - (targetTotal[a] - gotTotal[a]);
+    });
+    return cands[0];
+  };
+
+  let success = false;
+  for (let attempt = 0; attempt < 300; attempt++) {
+    // Reset phase 2 slots only
+    const gT = [...gotTotal], gP = [...gotPrime];
+    const p2Sched = Array.from({length: p2Days}, () => new Array(SLOTS).fill(-1));
+
+    // Temporarily extend schedule array with empty phase2
+    for (let d = PHASE2_START_DAY; d < DAYS; d++)
+      schedule[d] = new Array(SLOTS).fill(-1);
+
+    let ok = true;
+
+    // Prime slots
+    for (let d = PHASE2_START_DAY; d < DAYS && ok; d++) {
+      const primeSlots = Array.from({length: PRIME_PER_DAY}, (_, i) => PRIME_START + i);
+      shuffle(primeSlots);
+      for (const s of primeSlots) {
+        let c = [];
+        for (let i = 0; i < n; i++)
+          if (gP[i] < targetPrime[i] && gT[i] < targetTotal[i] && canAssign(i, d, s)) c.push(i);
+        if (!c.length) for (let i = 0; i < n; i++)
+          if (gT[i] < targetTotal[i] && canAssign(i, d, s)) c.push(i);
+        if (!c.length) for (let i = 0; i < n; i++) if (canAssign(i, d, s)) c.push(i);
+        if (!c.length) { ok = false; break; }
+        shuffle(c);
+        c.sort((a, b) => {
+          const pa = targetPrime[a] - gP[a], pb = targetPrime[b] - gP[b];
+          if (pa !== pb) return pb - pa;
+          return (targetTotal[b] - gT[b]) - (targetTotal[a] - gT[a]);
+        });
+        schedule[d][s] = c[0]; gT[c[0]]++; gP[c[0]]++;
+      }
+    }
+
+    // Non-prime slots
+    for (let d = PHASE2_START_DAY; d < DAYS && ok; d++) {
+      const nonPrime = Array.from({length: SLOTS}, (_, i) => i).filter(s => s < PRIME_START || s > PRIME_END);
+      shuffle(nonPrime);
+      for (const s of nonPrime) {
+        let c = [];
+        for (let i = 0; i < n; i++)
+          if (gT[i] < targetTotal[i] && canAssign(i, d, s)) c.push(i);
+        if (!c.length) for (let i = 0; i < n; i++) if (canAssign(i, d, s)) c.push(i);
+        if (!c.length) { ok = false; break; }
+        shuffle(c);
+        c.sort((a, b) => (targetTotal[b] - gT[b]) - (targetTotal[a] - gT[a]));
+        schedule[d][s] = c[0]; gT[c[0]]++;
+      }
+    }
+
+    if (ok) { success = true; break; }
+  }
+
+  if (!success) { toast('(!) Could not regenerate Phase 2 - try again'); return; }
+
+  // Save only phase 2 rows to Supabase
+  setSyncState('syncing', 'Saving Phase 2...');
+  const rows = [];
+  for (let d = PHASE2_START_DAY; d < DAYS; d++)
+    for (let s = 0; s < SLOTS; s++)
+      rows.push({ day: d, slot: s, resource_idx: schedule[d][s] });
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await sb.from('schedule').upsert(rows.slice(i, i + 500), { onConflict: 'day,slot' });
+    if (error) { toast('Save failed: ' + error.message); setSyncState('error', 'Save failed'); return; }
+  }
+  setSyncState('synced', 'Saved');
+  renderAll();
+  toast('Phase 2 regenerated and saved (OK)');
 }
 
 // ---
