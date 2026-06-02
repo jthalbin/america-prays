@@ -10,13 +10,13 @@
   :root {
     --bg: #0a0c12; --bg2: #10131c; --bg3: #181c28; --bg4: #1f2435;
     --border: rgba(255,255,255,0.06); --border2: rgba(255,255,255,0.12);
-    --text: #e4e8f4; --text2: #7a82a0; --text3: #464e68;
+    --text: #f0f4ff; --text2: #a8b3cc; --text3: #6b7591;
     --accent: #5b9cf6; --accent2: #2d5fc4;
     --prime: #f5a623; --prime-bg: rgba(245,166,35,0.12);
     --morning: #34c98a; --morning-bg: rgba(52,201,138,0.10);
     --afternoon: #60c0f5; --afternoon-bg: rgba(96,192,245,0.10);
     --night: #a47cf0; --night-bg: rgba(164,124,240,0.10);
-    --mid: #55606e; --mid-bg: rgba(85,96,110,0.10);
+    --mid: #8a96a8; --mid-bg: rgba(85,96,110,0.10);
     --danger: #e05a5a; --success: #34c98a;
     --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
     --mono: 'Consolas', 'Courier New', monospace;
@@ -94,25 +94,34 @@
   /* ── Stats ── */
   .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 16px; }
   .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; }
-  .stat-label { font-size: 10px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+  .stat-label { font-size: 10px; color: #8a96a8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
   .stat-val { font-size: 20px; font-weight: 600; font-family: var(--mono); color: var(--text); }
 
   /* ── Legend ── */
   .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
-  .leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+  .leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #a8b3cc; }
   .leg-dot { width: 9px; height: 9px; border-radius: 2px; }
 
   /* ── Table ── */
   .tbl-wrap { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
   table { width: 100%; border-collapse: collapse; }
-  thead th { padding: 9px 13px; text-align: left; font-size: 10px; font-weight: 600; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; background: var(--bg3); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  thead th { padding: 9px 13px; text-align: left; font-size: 10px; font-weight: 600; color: #8a96a8; letter-spacing: 0.06em; text-transform: uppercase; background: var(--bg3); border-bottom: 1px solid var(--border); white-space: nowrap; }
   tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
   tbody tr:last-child { border-bottom: none; }
   tbody tr:hover { background: var(--bg3); }
   tbody td { padding: 7px 13px; font-size: 13px; vertical-align: middle; }
-  .time-col { font-family: var(--mono); font-size: 11px; color: var(--text2); white-space: nowrap; width: 105px; }
-  .ist-col  { font-family: var(--mono); font-size: 10px; color: var(--text3); white-space: nowrap; width: 105px; }
+  .time-col { font-family: var(--mono); font-size: 11px; color: #c8d0e8; white-space: nowrap; width: 105px; }
+  .ist-col  { font-family: var(--mono); font-size: 10px; color: #8a96a8; white-space: nowrap; width: 105px; }
   .type-col { width: 95px; }
+
+  /* ── Completed slots ── */
+  tbody tr.slot-done { opacity: 0.45; }
+  tbody tr.slot-done td { text-decoration: none; }
+  tbody tr.slot-done .tag { filter: grayscale(0.6); }
+  tbody tr.slot-current { background: rgba(245,166,35,0.07) !important; border-left: 3px solid var(--prime); }
+  tbody tr.slot-current .time-col { color: var(--prime) !important; font-weight: 600; }
+  .live-badge { font-size: 9px; background: var(--prime); color: #000; padding: 2px 6px; border-radius: 9px; margin-left: 6px; font-weight: 700; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
   /* ── Tags ── */
   .tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 18px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
@@ -129,7 +138,7 @@
   .res-card:hover { border-color: var(--border2); }
   .res-name { font-size: 12.5px; font-weight: 500; color: var(--text); margin-bottom: 5px; display: flex; align-items: center; justify-content: space-between; gap: 7px; }
   .res-name input { flex: 1; font-size: 12px; padding: 3px 7px; }
-  .res-meta { font-size: 10.5px; color: var(--text3); font-family: var(--mono); }
+  .res-meta { font-size: 10.5px; color: #8a96a8; font-family: var(--mono); }
   .res-prime-badge { font-size: 9.5px; background: var(--prime-bg); color: var(--prime); padding: 2px 5px; border-radius: 7px; margin-left: 3px; }
 
   /* ── Prime view ── */
@@ -891,23 +900,56 @@ function renderSchedule() {
 
 function filterSlots() { fillScheduleRows((document.getElementById('slotSearch')?.value||'').toLowerCase()); }
 
+function getETNowSlot() {
+  // Returns {day, slot} for current ET time (UTC-4, EDT)
+  const now = new Date();
+  const etMs = now.getTime() + (now.getTimezoneOffset() * 60000) - (4 * 3600000);
+  const etNow = new Date(etMs);
+  const eventStart = new Date(Date.UTC(2026, 5, 4, 4, 0, 0)); // Jun 4 00:00 ET = UTC+4
+  const diffMs = etNow.getTime() - eventStart.getTime();
+  if (diffMs < 0) return { day: -1, slot: -1 };
+  const diffMins = Math.floor(diffMs / 60000);
+  const day  = Math.floor(diffMins / (48 * 30));
+  const slot = Math.floor((diffMins % (48 * 30)) / 30);
+  return { day: Math.min(day, DAYS - 1), slot: Math.min(slot, SLOTS - 1) };
+}
+
 function fillScheduleRows(q) {
   const tbody=document.getElementById('schedTbody'); if (!tbody) return;
   tbody.innerHTML='';
   const day=schedule[currentDay]; if (!day) return;
+  const { day: nowDay, slot: nowSlot } = getETNowSlot();
+
   day.forEach((ri,s) => {
     const rName=resources[ri]||'-';
     if (q&&!rName.toLowerCase().includes(q)) return;
     const t=slotType(s), isPrime=t==='prime';
     const tr=document.createElement('tr');
+
+    const isCurrent = currentDay === nowDay && s === nowSlot;
+    const isDone    = currentDay < nowDay || (currentDay === nowDay && s < nowSlot);
+    if (isCurrent) tr.className = 'slot-current';
+    else if (isDone) tr.className = 'slot-done';
+
+    const liveBadge = isCurrent ? ' <span class="live-badge">LIVE</span>' : '';
+    const doneLabel = isDone ? ' <span style="font-size:10px;color:#6b7591;">done</span>' : '';
+
     tr.innerHTML=`
-      <td class="time-col">${slotToET(s)}</td>
+      <td class="time-col">${slotToET(s)}${liveBadge}</td>
       <td class="ist-col">${slotToIST(s)}</td>
-      <td><span class="tag tag-${t}">${escHtml(rName)}</span>${isPrime?`<span class="prime-star">* PRIME</span>`:''}</td>
-      <td class="type-col"><span style="font-size:10.5px;color:var(--text3)">${typeLabel(t)}</span></td>
+      <td><span class="tag tag-${t}">${escHtml(rName)}</span>${isPrime?'<span class="prime-star">* PRIME</span>':''}${doneLabel}</td>
+      <td class="type-col"><span style="font-size:10.5px;color:#8a96a8">${typeLabel(t)}</span></td>
       <td>${isAdmin()?`<button class="icon-btn" onclick="openSlotEdit(${currentDay},${s})">Edit</button>`:''}</td>`;
     tbody.appendChild(tr);
   });
+
+  // Auto-scroll to current slot when viewing today
+  if (currentDay === nowDay) {
+    setTimeout(() => {
+      const cur = tbody.querySelector('.slot-current');
+      if (cur) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+  }
 }
 
 function prevDay() { if (currentDay>0)       { currentDay--; renderSchedule(); buildDayList(); } }
