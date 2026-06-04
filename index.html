@@ -115,11 +115,14 @@
   .type-col { width: 95px; }
 
   /* ── Completed slots ── */
-  tbody tr.slot-done { opacity: 0.45; }
-  tbody tr.slot-done td { text-decoration: none; }
-  tbody tr.slot-done .tag { filter: grayscale(0.6); }
-  tbody tr.slot-current { background: rgba(245,166,35,0.07) !important; border-left: 3px solid var(--prime); }
-  tbody tr.slot-current .time-col { color: var(--prime) !important; font-weight: 600; }
+  tbody tr.slot-done { opacity: 1; background: rgba(255,255,255,0.02); }
+  tbody tr.slot-done td { color: #5a6480 !important; }
+  tbody tr.slot-done .tag { filter: grayscale(1) brightness(0.5); border-color: rgba(255,255,255,0.08) !important; }
+  tbody tr.slot-done .time-col { color: #4a5470 !important; }
+  tbody tr.slot-done .ist-col  { color: #3a4460 !important; }
+  tbody tr.slot-current { background: rgba(245,166,35,0.10) !important; border-left: 3px solid var(--prime); }
+  tbody tr.slot-current td { color: #ffffff !important; }
+  tbody tr.slot-current .time-col { color: var(--prime) !important; font-weight: 700; }
   .live-badge { font-size: 9px; background: var(--prime); color: #000; padding: 2px 6px; border-radius: 9px; margin-left: 6px; font-weight: 700; animation: pulse 1.2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
@@ -901,12 +904,24 @@ function renderSchedule() {
 function filterSlots() { fillScheduleRows((document.getElementById('slotSearch')?.value||'').toLowerCase()); }
 
 function getETNowSlot() {
-  // Returns {day, slot} for current ET time (UTC-4, EDT)
+  // Convert current time to ET (UTC-4, EDT summer)
   const now = new Date();
-  const etMs = now.getTime() + (now.getTimezoneOffset() * 60000) - (4 * 3600000);
-  const etNow = new Date(etMs);
-  const eventStart = new Date(Date.UTC(2026, 5, 4, 4, 0, 0)); // Jun 4 00:00 ET = UTC+4
-  const diffMs = etNow.getTime() - eventStart.getTime();
+  // Get current time as ET by formatting with timezone
+  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const etNow = new Date(etStr);
+  // Event starts Jun 4 2026 00:00 ET
+  const eventStart = new Date('2026-06-04T00:00:00');
+  const eventStartET = new Date(new Date('2026-06-04T00:00:00').toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  // Use UTC-based calculation for reliability
+  const nowUTC = now.getTime();
+  // Jun 4 2026 00:00 ET = Jun 4 2026 04:00 UTC (EDT = UTC-4)
+  const eventStartUTC = Date.UTC(2026, 5, 4, 4, 0, 0);
+  // Current ET time in minutes since event start
+  // ET = UTC - 4 hours
+  const etOffsetMs = -4 * 3600000;
+  const nowET_ms = nowUTC + etOffsetMs;
+  const startET_ms = eventStartUTC + etOffsetMs;
+  const diffMs = nowET_ms - startET_ms;
   if (diffMs < 0) return { day: -1, slot: -1 };
   const diffMins = Math.floor(diffMs / 60000);
   const day  = Math.floor(diffMins / (48 * 30));
