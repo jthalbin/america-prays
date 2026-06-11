@@ -245,16 +245,27 @@
 
   <!-- Main -->
   <div class="main">
+    <!-- Clock bar -->
+    <div style="display:flex;align-items:center;gap:16px;padding:8px 18px;background:#0d101a;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <span style="font-size:10px;font-weight:700;color:#6b7591;letter-spacing:0.08em;text-transform:uppercase;">ET</span>
+        <span id="etClock" style="font-family:var(--mono);font-size:15px;font-weight:700;color:#ffcc60;letter-spacing:0.04em;">--:--:-- --</span>
+      </div>
+      <div style="color:#2a3040;font-size:16px;">|</div>
+      <div style="display:flex;align-items:center;gap:7px;">
+        <span style="font-size:10px;font-weight:700;color:#6b7591;letter-spacing:0.08em;text-transform:uppercase;">IST</span>
+        <span id="istClock" style="font-family:var(--mono);font-size:15px;font-weight:700;color:#80ffd0;letter-spacing:0.04em;">--:--:-- --</span>
+      </div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+        <span class="sync-dot synced" id="syncDot"></span>
+        <span id="syncLabel" style="font-size:11px;color:#6b7591;font-family:var(--mono);">Ready</span>
+      </div>
+    </div>
+    <!-- Main topbar -->
     <div class="topbar">
       <div>
         <div class="topbar-title" id="topTitle">Day 1 - June 4, 2026</div>
-        <div class="topbar-sub" id="topSub">
-          <span id="etClock" style="color:#ffcc60;font-weight:600;font-family:var(--mono);font-size:12px;"></span>
-          <span style="color:var(--text3);margin:0 5px;">|</span>
-          <span id="istClock" style="color:#80ffd0;font-weight:600;font-family:var(--mono);font-size:12px;"></span>
-          <span style="color:var(--text3);margin:0 5px;">·</span>
-          <span class="sync-dot synced" id="syncDot"></span><span id="syncLabel">Ready</span>
-        </div>
+        <div class="topbar-sub" id="topSub">48 slots x 30 min · ET &amp; IST</div>
       </div>
       <div style="display:flex;gap:7px;flex-wrap:wrap;margin-left:auto;" id="topbarActions">
         <!-- Populated dynamically based on auth state -->
@@ -328,6 +339,9 @@ let realtimeSub = null;
 
   // Load data from Supabase
   await loadData();
+  // Auto-jump to today's day in ET
+  const { day: todayDay } = getETNowSlot();
+  if (todayDay >= 0 && todayDay < DAYS) currentDay = todayDay;
   renderAll();
   subscribeRealtime();
   startClock();
